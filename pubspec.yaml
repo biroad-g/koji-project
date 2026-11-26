@@ -1,0 +1,55 @@
+name: gaiji_album
+description: "寺院で使われる外字・古字を撮影して登録するオフライン外字アルバム"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 状態管理
+  provider: 6.1.5+1
+
+  # 撮影 / 画像選択（Android・Web 両対応）
+  image_picker: 1.1.2
+
+  # 切り取り処理（純 Dart 実装・全プラットフォーム対応）
+  image: ^4.2.0
+
+  # 端末内保存（オフライン・Web は IndexedDB に保存）
+  hive: 2.2.3
+  hive_flutter: 1.1.0
+
+  # 書き出し / 共有
+  share_plus: 10.1.4
+  path_provider: 2.1.5
+
+  # 日付整形・日本語ロケール
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+
+  fonts:
+    - family: NotoSerifJP
+      fonts:
+        - asset: assets/fonts/NotoSerifJP-Regular.ttf
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.ttf
