@@ -1,5 +1,7 @@
-import 'dart:typed_data';
+import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
@@ -20,6 +22,72 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  /// Web のときだけ接続状態を監視する（オフラインでも使えることを伝えるため）
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _listenConnectivity();
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectivitySub?.cancel();
+    super.dispose();
+  }
+
+  void _listenConnectivity() {
+    final connectivity = Connectivity();
+    bool? previous;
+    _connectivitySub =
+        connectivity.onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (previous != null && previous != online) {
+        _showConnectionNotice(online);
+      }
+      previous = online;
+    });
+  }
+
+  void _showConnectionNotice(bool online) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        backgroundColor: online ? AppColors.indigo : AppColors.inkSoft,
+        content: Row(
+          children: [
+            Icon(
+              online ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+              color: AppColors.goldSoft,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                online
+                    ? 'オンラインに戻りました'
+                    : 'オフラインになりました。そのまま撮影・登録できます',
+                style: const TextStyle(
+                  fontFamily: AppTheme.fontSans,
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: AppColors.paper,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

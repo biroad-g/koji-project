@@ -35,6 +35,9 @@ dependencies:
   # 日付整形・日本語ロケール
   intl: ^0.20.2
 
+  # 通信状態の監視（オフラインで使えることを知らせる）
+  connectivity_plus: 6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
