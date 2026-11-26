@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -10,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/gaiji_entry.dart';
 import '../state/gaiji_provider.dart';
 import '../theme/app_theme.dart';
+import 'crop_flow_screen.dart';
 import 'register_screen.dart';
 
 /// 外字の詳細表示・書き出し・編集・削除
@@ -17,6 +19,152 @@ class DetailScreen extends StatelessWidget {
   const DetailScreen({super.key, required this.entryId});
 
   final String entryId;
+
+  /// 画像を再編集する（枠を引き直して切り取り直す）
+  ///
+  /// 元写真があればそれを、無ければ現在の字形を読み込んで、
+  /// 「漢字を一字囲む」画面を開き直します。
+  Future<void> _reeditImage(BuildContext context, GaijiEntry entry) async {
+    final provider = context.read<GaijiProvider>();
+    final source = entry.originalBytes ?? entry.imageBytes;
+
+    final edited = await openCropFlow(context, source);
+
+    if (edited == null) return;
+    if (!context.mounted) return;
+
+    // 切り取り直した画像を保存する
+    await provider.replaceImage(
+      entryId: entry.id,
+      croppedImage: edited.croppedImage,
+      originalImage: entry.originalBytes ?? edited.originalImage,
+    );
+
+    if (!context.mounted) return;
+    HapticFeedback.mediumImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('字形を切り取り直しました')),
+    );
+  }
+
+  /// 端末の写真から選び直して切り取る
+  Future<void> _replaceFromGallery(
+    BuildContext context,
+    GaijiEntry entry,
+  ) async {
+    final provider = context.read<GaijiProvider>();
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 3000,
+        maxHeight: 3000,
+        imageQuality: 92,
+      );
+      if (file == null) return;
+      final bytes = Uint8List.fromList(await file.readAsBytes());
+      if (!context.mounted) return;
+
+      final edited = await openCropFlow(context, bytes);
+      if (edited == null) return;
+      if (!context.mounted) return;
+
+      await provider.replaceImage(
+        entryId: entry.id,
+        croppedImage: edited.croppedImage,
+        originalImage: edited.originalImage,
+      );
+
+      if (!context.mounted) return;
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('写真から字形を差し替えました')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('画像を読み込めませんでした: $e')),
+      );
+    }
+  }
+
+  /// 画像の編集方法を選ぶシート
+  Future<void> _showImageEditSheet(
+    BuildContext context,
+    GaijiEntry entry,
+  ) async {
+    final hasOriginal = entry.originalBytes != null;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paper,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '画像を編集',
+              style: TextStyle(
+                fontFamily: AppTheme.fontSerif,
+                fontSize: 16,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                '切り取り枠を引き直して、字形を取り直せます',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.6,
+                  color: AppColors.inkSoft.withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SheetAction(
+              icon: Icons.crop_free,
+              title: '枠を引き直す',
+              subtitle: hasOriginal
+                  ? '撮影した元写真から切り取り直します'
+                  : '今の字形をもとに切り取り直します',
+              onTap: () => Navigator.of(ctx).pop('recrop'),
+            ),
+            _SheetAction(
+              icon: Icons.photo_library_outlined,
+              title: '別の写真から選び直す',
+              subtitle: '端末の写真から読み込んで切り取ります',
+              onTap: () => Navigator.of(ctx).pop('gallery'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (action == null) return;
+    if (!context.mounted) return;
+    if (action == 'recrop') {
+      await _reeditImage(context, entry);
+    } else if (action == 'gallery') {
+      await _replaceFromGallery(context, entry);
+    }
+  }
 
   Future<void> _exportPng(BuildContext context, GaijiEntry entry) async {
     try {
@@ -138,7 +286,30 @@ class DetailScreen extends StatelessWidget {
               child: Image.memory(entry.imageBytes, fit: BoxFit.contain),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 14),
+          // 画像の再編集（切り取り枠の引き直し・写真の差し替え）
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: () => _showImageEditSheet(context, entry),
+              icon: const Icon(Icons.crop_free, size: 17),
+              label: const Text('画像を編集'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.indigo,
+                side: BorderSide(
+                  color: AppColors.gold.withValues(alpha: 0.75),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontSans,
+                  fontSize: 13,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           Center(
             child: Text(
               entry.name,
@@ -269,6 +440,74 @@ class DetailScreen extends StatelessWidget {
       await context.read<GaijiProvider>().remove(entry.id);
       if (context.mounted) Navigator.of(context).pop();
     }
+  }
+}
+
+/// 画像編集シートの1行
+class _SheetAction extends StatelessWidget {
+  const _SheetAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.indigo.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Icon(icon, size: 20, color: AppColors.indigo),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontSerif,
+                      fontSize: 14.5,
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontSans,
+                      fontSize: 11.5,
+                      height: 1.5,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.inkFaint),
+          ],
+        ),
+      ),
+    );
   }
 }
 

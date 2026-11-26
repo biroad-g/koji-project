@@ -110,6 +110,35 @@ class GaijiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 字形画像だけを差し替える（詳細画面からの再編集用）
+  Future<void> replaceImage({
+    required String entryId,
+    required Uint8List croppedImage,
+    Uint8List? originalImage,
+  }) async {
+    final current = _entries.where((e) => e.id == entryId).firstOrNull;
+    if (current == null) return;
+
+    final updated = GaijiEntry(
+      id: current.id,
+      name: current.name,
+      reading: current.reading,
+      category: current.category,
+      source: current.source,
+      memo: current.memo,
+      imageBase64: base64Encode(croppedImage),
+      originalBase64: originalImage == null
+          ? current.originalBase64
+          : base64Encode(originalImage),
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+    );
+
+    await _repository.save(updated);
+    _entries = _repository.loadAll();
+    notifyListeners();
+  }
+
   Future<void> remove(String id) async {
     await _repository.delete(id);
     _entries = _repository.loadAll();

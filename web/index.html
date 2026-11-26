@@ -56,24 +56,20 @@
         2) キーボード表示時に iOS がページを押し上げ、visualViewport.offsetTop が
            0 に戻らず残留する
         3) ピンチ操作で拡大したまま戻らない（iOS は user-scalable=no を無視する）
-      ここでは 2) と 3) をレイアウト固定＋JS で打ち消します。1) は Dart 側で
-      入力欄の文字サイズを 16px 以上にして対処しています。
+      ここでは 2) と 3) を JS で打ち消します。1) は Dart 側で入力欄の文字サイズを
+      16px 以上にして対処しています。
+
+      重要: html/body に position:fixed を入れると、Flutter のタップ判定が
+      ずれることがあるため使いません（overflow:hidden と overscroll-behavior
+      だけでスクロール臭は消せます）。
     */
     html {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
       overflow: hidden;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
 
     body {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
       overflow: hidden;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
@@ -90,16 +86,13 @@
       user-select: text;
     }
 
-    /* Flutter のホスト要素がはみ出さないように固定する */
-    flutter-view,
-    flt-glass-pane,
-    flt-scene-host {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
-      touch-action: manipulation;
-    }
+    /*
+      Flutter のホスト要素（flutter-view / flt-glass-pane）には手を加えない。
+      ここに position:fixed や width/height を !important で上書きすると、
+      レンダリング位置とタップ判定位置がずれ、全てのタップが別の場所に
+      当たるようになる（実測で約120px のズレが出た）。
+      Flutter エンジン自身が正しいサイズを設定するので、触らないのが正解。
+    */
 
     /* Flutter が描画を始めるまでのスプラッシュ */
     #gaiji-splash {
