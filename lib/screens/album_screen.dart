@@ -34,6 +34,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
     final items = provider.visible;
 
     return Scaffold(
+      // iPhone のキーボード残留による押し上げ（＝タップ位置ズレ）を防ぐ。
+      // 検索欄は画面上部にあり、下タブもあるため縮める必要はありません。
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
           IndigoHeader(

@@ -59,6 +59,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // iPhone のキーボード残留による押し上げ（＝タップ位置ズレ）を防ぐ
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
           const IndigoHeader(

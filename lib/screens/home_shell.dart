@@ -99,6 +99,12 @@ class _HomeShellState extends State<HomeShell> {
     _albumEmpty = !provider.loading && provider.total == 0;
 
     return Scaffold(
+      // iPhone では「キーボードが閉じているのに iOS 側だけ開いたまま」という
+      // 状態になることがあり、そのとき Flutter が画面を押し上げて
+      // 描画位置とタップ位置がずれます（Flutter #111896）。
+      // 下タブのある画面ではキーボードに合わせて縮める必要がないため、
+      // 縮めない設定にして、この押し上げ自体を起こさせません。
+      resizeToAvoidBottomInset: false,
       body: IndexedStack(
         index: _index,
         children: [

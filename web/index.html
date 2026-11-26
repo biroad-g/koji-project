@@ -18,14 +18,24 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!--
+    viewport-fit=cover は「内容をノッチ／ステータスバーの下まで広げる」指定です。
+    これを付けると iOS は内容を画面端まで描く代わりに、ステータスバーの高さ分だけ
+    表示を押し上げることがあり、その分だけタップ位置がずれます。
+    座標の正確さを最優先して cover は使いません（背景色はアプリと同じ藍色）。
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="寺院で使われる外字・古字を撮影して登録するオフライン外字アルバム">
   <meta name="theme-color" content="#1E2A47">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!--
+    black-translucent だと内容がステータスバーの下に潜り、iOS がレイアウトを
+    押し上げる＝タップ座標がずれる原因になります。default で切り分けます。
+  -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="古字アルバム">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
@@ -51,26 +61,34 @@
     }
 
     /*
-      iPhone で「タップ位置と描画位置が全部ずれる」原因は3つあります。
-        1) 入力欄の文字が 16px 未満だと iOS が勝手に拡大する（→ 以後ずれ続ける）
-        2) キーボード表示時に iOS がページを押し上げ、visualViewport.offsetTop が
-           0 に戻らず残留する
-        3) ピンチ操作で拡大したまま戻らない（iOS は user-scalable=no を無視する）
-      ここでは 2) と 3) を JS で打ち消します。1) は Dart 側で入力欄の文字サイズを
-      16px 以上にして対処しています。
+      【2026-11 修正】iPhone で「タップ位置が少し上にずれる」件の本命の対処。
 
-      重要: html/body に position:fixed を入れると、Flutter のタップ判定が
-      ずれることがあるため使いません（overflow:hidden と overscroll-behavior
-      だけでスクロール臭は消せます）。
+      iOS を「ホーム画面に追加」して起動した PWA では、iOS がページ全体を
+      数十px 押し下げ／押し上げしたまま固定してしまうことがあります
+      （Flutter 公式の不具合報告 #115829 / #111896 と同根）。
+      その状態では「描画されている位置」と「タップが当たる位置」の原点が
+      食い違い、ボタンの少し上を押すと反応する、という症状になります。
+
+      対策は「ページを1pxもスクロールさせないこと」。
+      html と body を画面に固定し、スクロールの余地を完全に消します。
+      併せて JS 側でもスクロール位置を常に 0 に戻しています（下の script）。
     */
     html {
       overflow: hidden;
+      overscroll-behavior: none;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
 
+    /*
+      body は通常「画面に固定」(body.locked) してスクロールの余地を消します。
+      ただし入力中だけは固定を外します。固定したままだと iOS が
+      キーボードに隠れた入力欄を画面内へ送れなくなるためです。
+      （切り替えは下の script が行います）
+    */
     body {
       overflow: hidden;
+      overscroll-behavior: none;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
       /* 長押しでテキスト選択されると座標がずれることがあるため抑止 */
@@ -79,11 +97,26 @@
       user-select: none;
     }
 
+    body.locked {
+      position: fixed;
+      inset: 0;
+    }
+
     /* 入力欄だけは選択・編集を許可する */
     input,
     textarea {
       -webkit-user-select: text;
       user-select: text;
+    }
+
+    /*
+      touch-action: manipulation は「ダブルタップ拡大をしない」指定ですが、
+      このプロパティは継承されません。Flutter が内部で作る要素にも個別に
+      効かせる必要があるため、全要素に一括で適用します。
+      （レイアウトには一切影響しないので、安全に使えます）
+    */
+    * {
+      touch-action: manipulation;
     }
 
     /*
@@ -185,29 +218,91 @@
   <script>
     (function () {
       // ---------------------------------------------------------------
-      // iPhone のタップ座標ズレ対策
+      // iPhone のタップ座標ズレ対策（本命）
       // ---------------------------------------------------------------
-      // キーボードを閉じたあと、iOS は visualViewport.offsetTop が 0 に戻らず
-      // ページが数十px押し上げられたまま残ります。その状態では描画位置と
-      // タップ判定位置が食い違い、「全部のタップがずれる」症状になります。
-      // 入力欄からフォーカスが外れたタイミングで強制的に位置を戻します。
+      // 症状：ボタンを押すと、その「少し上」が反応する。
+      //
+      // これはページが数px〜数十px スクロールしている時に起こります。
+      // iOS（とくにホーム画面に追加した PWA）は、キーボードの表示／非表示や
+      // ステータスバーの伸縮のあと、ページを押し上げたまま固定してしまう
+      // ことがあります（Flutter 公式 #115829 / #111896 と同根）。
+      // スクロール量を S とすると、画面の Y を押したのに文書の Y+S が
+      // 反応するため、「少し上を押すと反応する」ように見えます。
+      //
+      // 対策：スクロール位置を常に 0 に固定する。
+      // CSS 側（html/body を position:fixed）と二重で止めています。
 
+      function lockScroll() {
+        if (window.scrollX !== 0 || window.scrollY !== 0) {
+          window.scrollTo(0, 0);
+        }
+        var el = document.scrollingElement || document.documentElement;
+        if (el) {
+          if (el.scrollTop !== 0) el.scrollTop = 0;
+          if (el.scrollLeft !== 0) el.scrollLeft = 0;
+        }
+      }
+
+      // 入力中だけは body の固定を外す（キーボードで隠れた欄へ送れるように）
+      function isTyping() {
+        var a = document.activeElement;
+        if (!a) return false;
+        var t = (a.tagName || '').toLowerCase();
+        return t === 'input' || t === 'textarea' || a.isContentEditable === true;
+      }
+
+      function syncBodyLock() {
+        var b = document.body;
+        if (!b) return;
+        if (isTyping()) {
+          b.classList.remove('locked');
+        } else {
+          b.classList.add('locked');
+          lockScroll();
+        }
+      }
+
+      document.addEventListener('focusin', syncBodyLock, true);
+      document.addEventListener('focusout', function () {
+        setTimeout(syncBodyLock, 0);
+      }, true);
+      if (document.body) {
+        document.body.classList.add('locked');
+      } else {
+        document.addEventListener('DOMContentLoaded', syncBodyLock);
+      }
+
+      window.addEventListener('scroll', lockScroll, { passive: true });
+      document.addEventListener('scroll', lockScroll, {
+        passive: true,
+        capture: true,
+      });
+      window.addEventListener('touchstart', lockScroll, { passive: true });
+      window.addEventListener('touchend', lockScroll, { passive: true });
+
+      // 押した瞬間にも位置をそろえる（ズレたまま反応するのを防ぐ最終防波堤）
+      window.addEventListener('pointerdown', lockScroll, {
+        passive: true,
+        capture: true,
+      });
+
+      // 画面回転・リサイズでも位置が戻るようにする
+      window.addEventListener('resize', lockScroll);
+      window.addEventListener('pageshow', lockScroll);
+
+      // キーボードを閉じたあと、visualViewport が押し上げられたまま残る件
       function resetViewport() {
+        lockScroll();
         var vv = window.visualViewport;
         if (!vv) return;
-        // 押し上げが残っている／拡大が残っている場合は元に戻す
         var drifted = Math.abs(vv.offsetTop) > 1 ||
                       Math.abs(vv.pageLeft || 0) > 1 ||
                       vv.scale > 1.01;
         if (!drifted) return;
-        window.scrollTo(0, 0);
-        if (document.scrollingElement) {
-          document.scrollingElement.scrollTop = 0;
-          document.scrollingElement.scrollLeft = 0;
-        }
         if (document.activeElement && document.activeElement.blur) {
           document.activeElement.blur();
         }
+        lockScroll();
       }
 
       window.addEventListener('focusout', function () {
@@ -215,6 +310,20 @@
         setTimeout(resetViewport, 60);
         setTimeout(resetViewport, 260);
       });
+
+      // iOS がキーボード表示で押し上げたまま残す「残留」を直接監視する。
+      // visualViewport の変化はこの症状の発生源そのものなので、
+      // 変化したら即座に位置を戻します。
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('scroll', resetViewport, {
+          passive: true,
+        });
+        window.visualViewport.addEventListener('resize', function () {
+          // キーボードが閉じきってから戻す
+          setTimeout(resetViewport, 120);
+          setTimeout(resetViewport, 400);
+        }, { passive: true });
+      }
 
       window.addEventListener('orientationchange', function () {
         setTimeout(resetViewport, 320);
@@ -225,6 +334,12 @@
         e.preventDefault();
       }, { passive: false });
 
+      // 2本指以上の操作（ピンチ）だけを止める。
+      // 1本指の操作は Flutter の一覧スクロールに必要なので妨げない。
+      document.addEventListener('touchmove', function (e) {
+        if (e.touches && e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+
       // ダブルタップ拡大を抑止
       var lastTouchEnd = 0;
       document.addEventListener('touchend', function (e) {
@@ -232,6 +347,12 @@
         if (now - lastTouchEnd <= 320) e.preventDefault();
         lastTouchEnd = now;
       }, { passive: false });
+
+      // 起動直後は、iOS がレイアウトを落ち着かせるまで数回そろえる
+      [50, 150, 350, 700, 1200, 2000].forEach(function (t) {
+        setTimeout(lockScroll, t);
+      });
+      lockScroll();
 
       // ---------------------------------------------------------------
       // スプラッシュ画面の制御
