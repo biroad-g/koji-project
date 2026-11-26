@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -18,10 +18,13 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="description" content="寺院で使われる外字・古字を撮影して登録するオフライン外字アルバム">
+  <meta name="theme-color" content="#1E2A47">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="古字アルバム">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
@@ -31,8 +34,130 @@
 
   <title>古字アルバム</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #1E2A47;
+      overflow: hidden;
+    }
+
+    /* Flutter が描画を始めるまでのスプラッシュ */
+    #gaiji-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 26px;
+      background: radial-gradient(circle at 50% 38%, #2C3C61 0%, #1E2A47 45%, #131B2E 100%);
+      font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+      color: #F6F3EA;
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+
+    #gaiji-splash-mark {
+      width: 96px;
+      height: 96px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(199, 162, 76, 0.55);
+      border-radius: 18px;
+      background: rgba(199, 162, 76, 0.08);
+      box-shadow: 0 0 0 8px rgba(199, 162, 76, 0.05);
+    }
+
+    #gaiji-splash-mark span {
+      font-size: 52px;
+      line-height: 1;
+      color: #E3CE96;
+      font-weight: 500;
+    }
+
+    #gaiji-splash-title {
+      font-size: 21px;
+      letter-spacing: 0.32em;
+      margin: 0;
+      padding-left: 0.32em;
+      color: #F6F3EA;
+      font-weight: 400;
+    }
+
+    #gaiji-splash-sub {
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      margin: -14px 0 0 0;
+      color: rgba(246, 243, 234, 0.55);
+      font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    }
+
+    #gaiji-splash-spinner {
+      width: 26px;
+      height: 26px;
+      border: 2px solid rgba(199, 162, 76, 0.22);
+      border-top-color: #C7A24C;
+      border-radius: 50%;
+      animation: gaiji-spin 0.9s linear infinite;
+      margin-top: 6px;
+    }
+
+    #gaiji-splash-message {
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      color: rgba(246, 243, 234, 0.7);
+      margin: 0;
+      padding: 0 32px;
+      text-align: center;
+      line-height: 1.7;
+      font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+      max-width: 340px;
+    }
+
+    @keyframes gaiji-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <div id="gaiji-splash">
+    <div id="gaiji-splash-mark"><span>字</span></div>
+    <h1 id="gaiji-splash-title">古字アルバム</h1>
+    <p id="gaiji-splash-sub">KOJI ALBUM</p>
+    <div id="gaiji-splash-spinner"></div>
+    <p id="gaiji-splash-message">読み込み中です</p>
+  </div>
+
+  <script>
+    (function () {
+      // Flutter が最初のフレームを描画すると flutter-first-frame が発火します
+      window.addEventListener('flutter-first-frame', function () {
+        var el = document.getElementById('gaiji-splash');
+        if (!el) return;
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+        window.setTimeout(function () {
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        }, 450);
+      });
+
+      // 25秒たっても起動しない場合は案内を出す（初回はエンジン取得に時間がかかります）
+      window.setTimeout(function () {
+        var el = document.getElementById('gaiji-splash');
+        if (!el) return;
+        var msg = document.getElementById('gaiji-splash-message');
+        if (msg) {
+          msg.textContent =
+            '読み込みに時間がかかっています。通信環境をご確認のうえ、再読み込みしてください。';
+        }
+      }, 25000);
+    })();
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
