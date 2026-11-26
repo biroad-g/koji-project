@@ -4,8 +4,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:provider/provider.dart';
 
 import '../services/crop_service.dart';
+import '../state/gaiji_provider.dart';
 import '../theme/app_theme.dart';
 import 'album_screen.dart';
 import 'capture_screen.dart';
@@ -22,6 +24,9 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  /// アルバムが空かどうか（空なら FAB を出さず、画面内のボタンを使う）
+  bool _albumEmpty = true;
 
   /// Web のときだけ接続状態を監視する（オフラインでも使えることを伝えるため）
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
@@ -91,6 +96,10 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 空のアルバムでは画面内の大きなボタンが入口になるため、FAB は出さない
+    final provider = context.watch<GaijiProvider>();
+    _albumEmpty = !provider.loading && provider.total == 0;
+
     return Scaffold(
       body: IndexedStack(
         index: _index,
@@ -99,10 +108,10 @@ class _HomeShellState extends State<HomeShell> {
           CaptureScreen(onImagePicked: _startCropFlow),
         ],
       ),
-      floatingActionButton: _index == 0
+      floatingActionButton: (_index == 0 && !_albumEmpty)
           ? Padding(
               // アルバム下部の絞り込みバー（62px）の上に出す
-              padding: const EdgeInsets.only(bottom: 68),
+              padding: const EdgeInsets.only(bottom: 74),
               child: FloatingActionButton.extended(
                 onPressed: () => setState(() => _index = 1),
                 backgroundColor: AppColors.indigo,

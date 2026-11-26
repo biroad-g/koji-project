@@ -68,6 +68,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         hasQuery: provider.query.isNotEmpty ||
                             provider.categoryFilter != null,
                         total: provider.total,
+                        onRequestCapture: widget.onRequestCapture,
                       )
                     : _buildGrid(context, items),
           ),
@@ -432,9 +433,14 @@ class _SortPill extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hasQuery, required this.total});
+  const _EmptyState({
+    required this.hasQuery,
+    required this.total,
+    this.onRequestCapture,
+  });
   final bool hasQuery;
   final int total;
+  final VoidCallback? onRequestCapture;
 
   @override
   Widget build(BuildContext context) {
@@ -455,7 +461,7 @@ class _EmptyState extends StatelessWidget {
     }
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.fromLTRB(32, 24, 32, 120),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -496,6 +502,38 @@ class _EmptyState extends StatelessWidget {
                 fontSize: 12.5,
                 height: 1.9,
                 color: AppColors.inkSoft.withValues(alpha: 0.9),
+              ),
+            ),
+            const SizedBox(height: 28),
+            // 空のときは、この画面内に大きな入口を置く（下タブと重ならない）
+            SizedBox(
+              width: double.infinity,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 330),
+                child: FilledButton.icon(
+                  onPressed: onRequestCapture,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 21),
+                  label: const Text(
+                    '外字を撮影する',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontSans,
+                      fontSize: 14.5,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.indigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 17),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      side: BorderSide(
+                        color: AppColors.gold.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
