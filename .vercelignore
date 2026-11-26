@@ -1,0 +1,12 @@
+# Flutter の生成物・ビルドキャッシュは Vercel に送らない
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+android/
+test/
+*.iml
+.git/
+
+# 開発用の一時ファイル
+*.log

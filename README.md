@@ -84,3 +84,52 @@ lib/
 
 外字の画像は base64 で端末内に保存されます。アプリを削除すると失われるため、
 大切な字は詳細画面の「PNG保存」で書き出して保管してください。
+
+---
+
+## Vercel へのデプロイ
+
+Flutter Web の静的サイトとして公開できます。
+ただし **Vercel の環境には Flutter SDK が入っていない**ため、
+`vercel_build.sh` が Flutter 3.35.4 を取得してからビルドします。
+
+### 設定ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `vercel.json` | ビルドコマンド・出力先・キャッシュヘッダの定義 |
+| `vercel_build.sh` | Flutter SDK の取得 → `flutter pub get` → `flutter build web --release` |
+| `.vercelignore` | `build/` `android/` など不要物をアップロードしない |
+
+### 手順（ダッシュボードから）
+
+1. https://vercel.com/new を開く
+2. GitHub の `koji-project` を **Import**
+3. Framework Preset は **Other** のまま（自動検出させない）
+4. 以下は `vercel.json` が読み込むため **空欄のままで可**
+   - Build Command / Output Directory / Install Command
+5. **Deploy** を押す
+
+初回は Flutter SDK の取得を含むため **3〜5分**ほどかかります。
+2回目以降はキャッシュにより短縮されます。
+
+### 手順（CLI から）
+
+```bash
+npm i -g vercel
+vercel login
+vercel --prod        # プロジェクト直下で実行
+```
+
+### 注意点
+
+- **初回ビルドは時間がかかります**（Flutter の clone と Dart SDK の取得）。
+  Vercel のビルド上限（Hobby プランで 45 分）には収まります。
+- `vercel.json` で `index.html` / `main.dart.js` / `flutter_service_worker.js` を
+  `must-revalidate` にしているため、更新時に古い画面が残りません。
+- `canvaskit/` `assets/` `icons/` は内容が変わらないため 1 年キャッシュにしています。
+- 保存データ（外字）は**ブラウザの IndexedDB** に入ります。
+  ドメインが変わると別データ扱いになる点にご注意ください
+  （`gaiji-project.vercel.app` → 独自ドメインに変える場合は移行が必要です）。
+- 公開 URL を知っていれば誰でも画面を開けますが、
+  外字データは各自のブラウザ内にのみ保存され、サーバーには送られません。
