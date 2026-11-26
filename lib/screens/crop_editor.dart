@@ -1,9 +1,26 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/crop_service.dart';
 import '../theme/app_theme.dart';
+
+/// compute に渡すための引数（重い画像処理を別アイソレートで行う）
+class _DetectArgs {
+  const _DetectArgs(this.bytes, this.threshold, this.imageWidth);
+  final Uint8List bytes;
+  final int threshold;
+  final int imageWidth;
+}
+
+/// 別アイソレートで動く文字検出の入口
+List<Rect> _detectCharsTask(_DetectArgs args) {
+  return CropService.detectCharacters(
+    args.bytes,
+    threshold: args.threshold,
+  );
+}
 
 /// 撮った写真から外字一字を囲む切り取りツール。
 /// 矩形はドラッグで移動、四隅と四辺のハンドルで大きさを調整できる。
@@ -50,10 +67,40 @@ class _CropEditorState extends State<CropEditor> {
   bool _autoTrim = true;
   double _threshold = 150;
 
+  /// 写真から自動検出した文字の候補（元画像ピクセル座標）
+  List<Rect> _candidates = const [];
+  bool _detectStarted = false;
+
+  /// 検出した文字に枠を合わせたか（案内文の出し分けに使う）
+  bool _snappedToChar = false;
+
   @override
   void initState() {
     super.initState();
     _transparent = widget.initialTransparent;
+  }
+
+  /// バックグラウンドで文字を検出し、枠を一字に合わせる
+  Future<void> _detectAndSnap() async {
+    if (_detectStarted) return;
+    _detectStarted = true;
+    try {
+      final found = await compute(
+        _detectCharsTask,
+        _DetectArgs(widget.imageBytes, _threshold.round(), widget.imageWidth),
+      );
+      if (!mounted) return;
+      setState(() {
+        _candidates = found;
+        final best = _pickCenterCandidate();
+        if (best != null) {
+          _rect = _pixelToDisplay(best);
+          _snappedToChar = true;
+        }
+      });
+    } catch (_) {
+      // 検出できなくても手動で囲めるので問題なし
+    }
   }
 
   double get _minSide => math.min(_imageBox.width, _imageBox.height) * 0.08;
@@ -77,10 +124,62 @@ class _CropEditorState extends State<CropEditor> {
     }
     _canvasSize = canvas;
     final box = _imageBox;
-    // 画像中央に一文字ぶんの枠を初期配置
-    final side = math.min(box.width, box.height) * 0.45;
+
+    // 写真から文字を検出して、いちばん中央にある一字を初期選択にする。
+    // 検出できなければ、画像中央に控えめな枠を置く。
+    final detected = _pickCenterCandidate();
+    if (detected != null) {
+      _rect = _pixelToDisplay(detected);
+      _initialized = true;
+      return;
+    }
+
+    final side = math.min(box.width, box.height) * 0.34;
     _rect = Rect.fromCenter(center: box.center, width: side, height: side);
     _initialized = true;
+  }
+
+  /// 元画像ピクセル座標 → 表示座標
+  Rect _pixelToDisplay(Rect pixelRect) {
+    final box = _imageBox;
+    if (widget.imageWidth <= 0 || widget.imageHeight <= 0) return pixelRect;
+    final sx = box.width / widget.imageWidth;
+    final sy = box.height / widget.imageHeight;
+    return Rect.fromLTRB(
+      box.left + pixelRect.left * sx,
+      box.top + pixelRect.top * sy,
+      box.left + pixelRect.right * sx,
+      box.top + pixelRect.bottom * sy,
+    );
+  }
+
+  /// 検出した文字のうち、画像の中心に最も近いものを選ぶ
+  Rect? _pickCenterCandidate() {
+    final cands = _candidates;
+    if (cands.isEmpty) return null;
+    final imgCenter = Offset(widget.imageWidth / 2, widget.imageHeight / 2);
+    Rect? best;
+    double bestDist = double.infinity;
+    for (final c in cands) {
+      final d = (c.center - imgCenter).distance;
+      if (d < bestDist) {
+        bestDist = d;
+        best = c;
+      }
+    }
+    if (best == null) return null;
+
+    // 文字の外接矩形に少し余白を足して、正方形に整える
+    final w = best.width;
+    final h = best.height;
+    final side = math.max(w, h) * 1.28;
+    final cx = best.center.dx;
+    final cy = best.center.dy;
+    double left = cx - side / 2;
+    double top = cy - side / 2;
+    left = left.clamp(0.0, math.max(0.0, widget.imageWidth - side));
+    top = top.clamp(0.0, math.max(0.0, widget.imageHeight - side));
+    return Rect.fromLTWH(left, top, side, side);
   }
 
   /// 元画像ピクセル座標へ変換
@@ -200,6 +299,10 @@ class _CropEditorState extends State<CropEditor> {
 
   @override
   Widget build(BuildContext context) {
+    // 初回描画後に、写真から文字を検出して枠を一字に合わせる
+    if (!_detectStarted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _detectAndSnap());
+    }
     return Column(
       children: [
         Expanded(
@@ -288,7 +391,9 @@ class _CropEditorState extends State<CropEditor> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '漢字一字を枠で囲んでください',
+                      _snappedToChar
+                          ? '一字を自動で選びました。枠をずらして調整できます'
+                          : '漢字一字を枠で囲んでください',
                       style: TextStyle(
                         fontFamily: AppTheme.fontSans,
                         fontSize: 12.5,

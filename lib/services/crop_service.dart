@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 
 import 'package:image/image.dart' as img;
 
@@ -76,6 +77,9 @@ class CropService {
   }
 
   /// 墨の外接矩形まで詰める（紙面の余白を落とす）
+  ///
+  /// 重要: この処理は「選んだ範囲の内側に詰める」だけで、範囲の外へは広げない。
+  /// 外へ広げると隣の文字まで巻き込んでしまい、一字を切り出せなくなるため。
   static img.Image _trimToInk(img.Image src, int threshold) {
     int minX = src.width, minY = src.height, maxX = -1, maxY = -1;
     for (int y = 0; y < src.height; y++) {
@@ -92,29 +96,123 @@ class CropService {
     }
     if (maxX < 0 || maxY < 0) return src; // 墨が見つからない場合はそのまま
 
-    // わずかに外側へ（字形の端が切れないように）
+    // わずかに外側へ（字形の端が切れないように）が、元の範囲は超えない
     final pad = math.max(2, (math.max(src.width, src.height) * 0.02).round());
-    final cx0 = (minX - pad).clamp(0, src.width - 1);
-    final cy0 = (minY - pad).clamp(0, src.height - 1);
-    final cx1 = (maxX + pad).clamp(cx0 + 1, src.width);
-    final cy1 = (maxY + pad).clamp(cy0 + 1, src.height);
+    final int cx0 = math.max(0, minX - pad);
+    final int cy0 = math.max(0, minY - pad);
+    final int cx1 = math.min(src.width, maxX + 1 + pad);
+    final int cy1 = math.min(src.height, maxY + 1 + pad);
 
-    // 正方形に近づける（外字は一字を方形で扱うため）
-    final w = cx1 - cx0;
-    final h = cy1 - cy0;
-    final int side = math.max(w, h);
+    // 正方形に近づける。ただし元の範囲内に収める（外へは広げない）
+    final int w = cx1 - cx0;
+    final int h = cy1 - cy0;
+    final int maxSide = math.max(w, h);
     final int centerX = (cx0 + cx1) ~/ 2;
     final int centerY = (cy0 + cy1) ~/ 2;
-    final int sx = (centerX - side ~/ 2)
-        .clamp(0, math.max(0, src.width - side))
-        .toInt();
-    final int sy = (centerY - side ~/ 2)
-        .clamp(0, math.max(0, src.height - side))
-        .toInt();
-    final int sw = math.min(side, src.width - sx);
-    final int sh = math.min(side, src.height - sy);
 
+    // 元画像のサイズを超えない範囲で正方形を作る
+    final int limit = math.min(math.max(maxSide, 1),
+        math.min(src.width, src.height));
+    int sx = centerX - limit ~/ 2;
+    int sy = centerY - limit ~/ 2;
+    sx = sx.clamp(0, math.max(0, src.width - limit));
+    sy = sy.clamp(0, math.max(0, src.height - limit));
+    final int sw = math.min(limit, src.width - sx);
+    final int sh = math.min(limit, src.height - sy);
+
+    if (sw <= 0 || sh <= 0) return src;
     return img.copyCrop(src, x: sx, y: sy, width: sw, height: sh);
+  }
+
+  /// 画像から「文字らしき領域」を検出して返す（元画像のピクセル座標）。
+  ///
+  /// 過去帳・扁額のような横並び／縦並びの文字列から一字を選ぶために使う。
+  /// 墨の投影（行・列の分布）から文字の切れ目を推定する。
+  static List<Rect> detectCharacters(
+    Uint8List source, {
+    int threshold = 150,
+    int maxCount = 60,
+  }) {
+    final decoded = img.decodeImage(source);
+    if (decoded == null) return const [];
+
+    final int w = decoded.width;
+    final int h = decoded.height;
+    if (w < 8 || h < 8) return const [];
+
+    // 1) 墨のマスクを作る
+    final mask = List<List<bool>>.generate(
+      h,
+      (_) => List<bool>.filled(w, false),
+      growable: false,
+    );
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        if (_luminance(decoded.getPixel(x, y)) < threshold) {
+          mask[y][x] = true;
+        }
+      }
+    }
+
+    // 2) 行ごとの墨の有無から「文字の帯」を求める
+    final rowInk = List<int>.filled(h, 0);
+    for (int y = 0; y < h; y++) {
+      int c = 0;
+      for (int x = 0; x < w; x++) {
+        if (mask[y][x]) c++;
+      }
+      rowInk[y] = c;
+    }
+    final rowGap = math.max(1, (w * 0.01).round());
+    final bands = _splitRuns(rowInk, rowGap);
+
+    final List<Rect> out = [];
+    for (final band in bands) {
+      // 3) 帯の中で列方向の墨分布を見て、文字ごとに切る
+      final colInk = List<int>.filled(w, 0);
+      for (int y = band.$1; y < band.$2; y++) {
+        for (int x = 0; x < w; x++) {
+          if (mask[y][x]) colInk[x]++;
+        }
+      }
+      final bandH = band.$2 - band.$1;
+      final colGap = math.max(2, (bandH * 0.08).round());
+      final cols = _splitRuns(colInk, colGap);
+      for (final col in cols) {
+        final cw = col.$2 - col.$1;
+        final chh = band.$2 - band.$1;
+        if (cw < w * 0.02 || chh < h * 0.04) continue; // 小さすぎるものは除外
+        if (cw > w * 0.9 && chh > h * 0.9) continue; // ほぼ全面は無視
+        out.add(Rect.fromLTRB(
+          col.$1.toDouble(),
+          band.$1.toDouble(),
+          col.$2.toDouble(),
+          band.$2.toDouble(),
+        ));
+        if (out.length >= maxCount) return out;
+      }
+    }
+    return out;
+  }
+
+  /// インク分布を「途切れている所」で区切って区間のリストにする
+  static List<(int, int)> _splitRuns(List<int> values, int minGap) {
+    final runs = <(int, int)>[];
+    int? start;
+    int lastInk = -1;
+    for (int i = 0; i < values.length; i++) {
+      if (values[i] > 0) {
+        if (start == null) {
+          start = i;
+        } else if (i - lastInk > minGap) {
+          runs.add((start, lastInk + 1));
+          start = i;
+        }
+        lastInk = i;
+      }
+    }
+    if (start != null && lastInk >= 0) runs.add((start, lastInk + 1));
+    return runs;
   }
 
   /// 紙の地色を透明にし、墨だけを残す（濃淡は保持）
