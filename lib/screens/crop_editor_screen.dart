@@ -31,7 +31,7 @@ class CropEditorScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF10151F),
       appBar: AppBar(
         backgroundColor: const Color(0xFF10151F),
-        title: const Text('切り取り'),
+        title: const Text('漢字を一字囲む'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, size: 20),
           onPressed: () => Navigator.of(context).pop(),
@@ -41,7 +41,7 @@ class CropEditorScreen extends StatelessWidget {
             padding: EdgeInsets.only(right: 14),
             child: Center(
               child: Text(
-                '一字を囲む',
+                '切り取り',
                 style: TextStyle(
                   fontSize: 11,
                   letterSpacing: 1.2,

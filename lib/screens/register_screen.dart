@@ -185,7 +185,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             _Label('読み（任意）'),
             TextFormField(
               controller: _readingCtrl,
-              style: const TextStyle(fontSize: 15),
+              // iPhone は入力欄が 16px 未満だと自動拡大し、以降タップ位置が
+              // ずれ続けるため、16px 以上を確保する
+              style: const TextStyle(fontSize: 16),
               decoration: const InputDecoration(hintText: '例：かん、ぼだい'),
               textInputAction: TextInputAction.next,
             ),
@@ -209,7 +211,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             _Label('出典（任意）'),
             TextFormField(
               controller: _sourceCtrl,
-              style: const TextStyle(fontSize: 14),
+              // iPhone の自動拡大を避けるため 16px 以上
+              style: const TextStyle(fontSize: 16),
               decoration: const InputDecoration(
                 hintText: '例：『大正蔵』第12巻、〇〇寺 過去帳、版木',
                 prefixIcon: Icon(Icons.menu_book_outlined, size: 18),
@@ -221,7 +224,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             _Label('メモ（任意）'),
             TextFormField(
               controller: _memoCtrl,
-              style: const TextStyle(fontSize: 14, height: 1.7),
+              // iPhone の自動拡大を避けるため 16px 以上
+              style: const TextStyle(fontSize: 16, height: 1.7),
               decoration: const InputDecoration(
                 hintText: '用例、気づいたこと、法話で使う場面など',
                 alignLabelWithHint: true,

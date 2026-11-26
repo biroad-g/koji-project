@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
 import '../services/crop_service.dart';
@@ -142,17 +142,15 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   /// 撮影／読み込みした画像から切り取り → 登録へ進む
+  ///
+  /// 写真の読み込み（デコード）に時間がかかると「何も起きない」ように見えて
+  /// しまうため、デコードを待たずに切り取り画面を開き、画面側で読み込みます。
   Future<void> _startCropFlow(Uint8List bytes) async {
-    final decoded = img.decodeImage(bytes);
     if (!mounted) return;
 
     final confirmed = await Navigator.of(context).push<_CropConfirmation>(
       MaterialPageRoute(
-        builder: (_) => _CropFlowScreen(
-          imageBytes: bytes,
-          imageWidth: decoded?.width ?? 0,
-          imageHeight: decoded?.height ?? 0,
-        ),
+        builder: (_) => _CropFlowScreen(imageBytes: bytes),
       ),
     );
 
@@ -181,15 +179,9 @@ class _CropConfirmation {
 
 /// 切り取り処理を実行し、確定した画像を返す画面
 class _CropFlowScreen extends StatefulWidget {
-  const _CropFlowScreen({
-    required this.imageBytes,
-    required this.imageWidth,
-    required this.imageHeight,
-  });
+  const _CropFlowScreen({required this.imageBytes});
 
   final Uint8List imageBytes;
-  final int imageWidth;
-  final int imageHeight;
 
   @override
   State<_CropFlowScreen> createState() => _CropFlowScreenState();
@@ -197,6 +189,47 @@ class _CropFlowScreen extends StatefulWidget {
 
 class _CropFlowScreenState extends State<_CropFlowScreen> {
   bool _processing = false;
+
+  /// 画像の実寸。dart:ui のコーデックで非同期に取得する
+  /// （大きな写真でもUIを固めないため）
+  int _width = 0;
+  int _height = 0;
+  bool _sizeReady = false;
+  String? _sizeError;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveSize();
+  }
+
+  Future<void> _resolveSize() async {
+    try {
+      final codec = await ui.instantiateImageCodec(widget.imageBytes);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width;
+      final h = frame.image.height;
+      frame.image.dispose();
+      codec.dispose();
+      if (!mounted) return;
+      setState(() {
+        _width = w;
+        _height = h;
+        _sizeReady = true;
+      });
+    } catch (e, st) {
+      debugPrint('image size resolve failed: $e\n$st');
+      if (!mounted) return;
+      // 寸法が取れなくても切り取り画面は開く（枠は手動で調整できる）
+      setState(() {
+        _sizeReady = true;
+        _sizeError = '写真の情報を読み取れませんでした。枠を手で合わせてください。';
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(_sizeError!)),
+      );
+    }
+  }
 
   Future<void> _onConfirmed(
     Rect pixelRect,
@@ -246,12 +279,45 @@ class _CropFlowScreenState extends State<_CropFlowScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 寸法を測っている間も「漢字を一字囲む」画面を出しておく（真っ暗にしない）
+    if (!_sizeReady) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF10151F),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF10151F),
+          automaticallyImplyLeading: false,
+          title: const Text('漢字を一字囲む'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, size: 20),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.gold),
+              SizedBox(height: 18),
+              Text(
+                '写真を読み込んでいます…',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  letterSpacing: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         CropEditorScreen(
           imageBytes: widget.imageBytes,
-          imageWidth: widget.imageWidth,
-          imageHeight: widget.imageHeight,
+          imageWidth: _width,
+          imageHeight: _height,
           onConfirmed: _onConfirmed,
         ),
         if (_processing)

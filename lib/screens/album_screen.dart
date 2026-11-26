@@ -174,7 +174,8 @@ class _SearchBar extends StatelessWidget {
         controller: controller,
         autofocus: true,
         onChanged: onChanged,
-        style: const TextStyle(fontSize: 14, color: AppColors.ink),
+        // iPhone は入力欄が 16px 未満だと自動拡大し、以降タップ位置がずれる
+        style: const TextStyle(fontSize: 16, color: AppColors.ink),
         decoration: InputDecoration(
           isDense: true,
           hintText: '名称・読み・出典・メモから検索',
@@ -460,10 +461,13 @@ class _EmptyState extends StatelessWidget {
       );
     }
     return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(32, 24, 32, 120),
+      child: Padding(
+        // iPhone Safari ではスクロール可能な領域がタップを横取りして
+        // 中のボタンが反応しないことがあるため、スクロールビューを使わない
+        padding: const EdgeInsets.fromLTRB(32, 16, 32, 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 108,

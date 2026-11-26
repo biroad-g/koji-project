@@ -39,9 +39,66 @@
     html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
       height: 100%;
       background-color: #1E2A47;
       overflow: hidden;
+      /* iPhone: スクロールやバウンスでタップ座標がずれるのを防ぐ */
+      overscroll-behavior: none;
+      -webkit-overflow-scrolling: auto;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
+    /*
+      iPhone で「タップ位置と描画位置が全部ずれる」原因は3つあります。
+        1) 入力欄の文字が 16px 未満だと iOS が勝手に拡大する（→ 以後ずれ続ける）
+        2) キーボード表示時に iOS がページを押し上げ、visualViewport.offsetTop が
+           0 に戻らず残留する
+        3) ピンチ操作で拡大したまま戻らない（iOS は user-scalable=no を無視する）
+      ここでは 2) と 3) をレイアウト固定＋JS で打ち消します。1) は Dart 側で
+      入力欄の文字サイズを 16px 以上にして対処しています。
+    */
+    html {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      /* 長押しでテキスト選択されると座標がずれることがあるため抑止 */
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* 入力欄だけは選択・編集を許可する */
+    input,
+    textarea {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    /* Flutter のホスト要素がはみ出さないように固定する */
+    flutter-view,
+    flt-glass-pane,
+    flt-scene-host {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      touch-action: manipulation;
     }
 
     /* Flutter が描画を始めるまでのスプラッシュ */
@@ -134,6 +191,58 @@
 
   <script>
     (function () {
+      // ---------------------------------------------------------------
+      // iPhone のタップ座標ズレ対策
+      // ---------------------------------------------------------------
+      // キーボードを閉じたあと、iOS は visualViewport.offsetTop が 0 に戻らず
+      // ページが数十px押し上げられたまま残ります。その状態では描画位置と
+      // タップ判定位置が食い違い、「全部のタップがずれる」症状になります。
+      // 入力欄からフォーカスが外れたタイミングで強制的に位置を戻します。
+
+      function resetViewport() {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        // 押し上げが残っている／拡大が残っている場合は元に戻す
+        var drifted = Math.abs(vv.offsetTop) > 1 ||
+                      Math.abs(vv.pageLeft || 0) > 1 ||
+                      vv.scale > 1.01;
+        if (!drifted) return;
+        window.scrollTo(0, 0);
+        if (document.scrollingElement) {
+          document.scrollingElement.scrollTop = 0;
+          document.scrollingElement.scrollLeft = 0;
+        }
+        if (document.activeElement && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
+      }
+
+      window.addEventListener('focusout', function () {
+        // フォーカスが外れてからレイアウトが落ち着くまで待つ
+        setTimeout(resetViewport, 60);
+        setTimeout(resetViewport, 260);
+      });
+
+      window.addEventListener('orientationchange', function () {
+        setTimeout(resetViewport, 320);
+      });
+
+      // ピンチ拡大を禁止する（iOS は user-scalable=no を無視するため）
+      document.addEventListener('gesturestart', function (e) {
+        e.preventDefault();
+      }, { passive: false });
+
+      // ダブルタップ拡大を抑止
+      var lastTouchEnd = 0;
+      document.addEventListener('touchend', function (e) {
+        var now = Date.now();
+        if (now - lastTouchEnd <= 320) e.preventDefault();
+        lastTouchEnd = now;
+      }, { passive: false });
+
+      // ---------------------------------------------------------------
+      // スプラッシュ画面の制御
+      // ---------------------------------------------------------------
       // Flutter が最初のフレームを描画すると flutter-first-frame が発火します
       window.addEventListener('flutter-first-frame', function () {
         var el = document.getElementById('gaiji-splash');
